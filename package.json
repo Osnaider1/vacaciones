@@ -1,0 +1,12 @@
+{
+  "name": "netlify-neon-vacations",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'no build'",
+    "dev": "netlify dev"
+  },
+  "dependencies": {
+    "pg": "^8.11.0"
+  }
+}

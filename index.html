@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>Planificador de Vacaciones - Equipo</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin: 0; padding: 0; background:#f5f7fb; color:#111; }
+        header { background:#0b5cff; color:#fff; padding:16px 24px; display:flex; align-items:center; justify-content:space-between; }
+        header h1 { margin:0; font-size:18px; }
+        main { display:flex; gap:20px; padding:20px; max-width:1100px; margin:0 auto; }
+        .panel { background:#fff; border-radius:8px; padding:16px; box-shadow:0 2px 8px rgba(10,10,10,0.06); }
+        .left { width:360px; }
+        .right { flex:1; }
+        label { display:block; margin-top:8px; font-size:13px; color:#444; }
+        input[type="text"], select, input[type="date"] { width:100%; padding:8px 10px; margin-top:6px; border:1px solid #d6d9df; border-radius:6px; }
+        button { background:#0b5cff; color:#fff; border:none; padding:10px 12px; border-radius:6px; cursor:pointer; margin-top:12px; }
+        button.secondary { background:#e6eefc; color:#0b5cff; border:1px solid #c7ddff; }
+        ul { padding-left:16px; margin:8px 0; }
+        .small { font-size:13px; color:#666; }
+        .vac-list { max-height:160px; overflow:auto; }
+        .vac-item { padding:8px; border-radius:6px; background:#f3f7ff; margin-bottom:8px; display:flex; justify-content:space-between; gap:10px; align-items:center; }
+        .calendar-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+        .calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+        .day { background:#fff; min-height:80px; border-radius:6px; padding:6px; border:1px solid #eef1f6; font-size:12px; position:relative; }
+        .day .num { font-weight:600; color:#222; }
+        .badge { display:inline-block; background:#0b5cff; color:#fff; padding:2px 6px; border-radius:12px; font-size:11px; margin-top:6px; }
+        .holiday { background:#ffecec; color:#a60000; padding:2px 6px; border-radius:6px; font-size:11px; display:inline-block; margin-top:6px; }
+        .vac-tag { display:block; margin-top:6px; padding:4px 6px; border-radius:6px; font-size:12px; background:#ffd9b3; color:#663d00; }
+        .controls { display:flex; gap:8px; align-items:center; }
+        .error { color:#a60000; font-size:13px; margin-top:6px; }
+        .success { color:#0b8a3e; font-size:13px; margin-top:6px; }
+        footer { text-align:center; color:#666; padding:12px 0; font-size:13px; }
+        @media (max-width:900px){ main{flex-direction:column;} .left{width:100%} }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Planificador de Vacaciones - Equipo</h1>
+        <div class="small">Máx días contados: 15 (se excluyen festivos de Colombia)</div>
+    </header>
+
+    <main>
+        <div class="panel left">
+         <h3>Equipo</h3>
+         <div>
+             <label>Agregar miembro</label>
+             <input id="new-member" type="text" placeholder="Nombre (ej. Juan Pérez)">
+             <div style="display:flex; gap:8px;">
+                <button id="add-member">Agregar</button>
+                <button id="reset-members" class="secondary">Restablecer</button>
+             </div>
+         </div>
+
+         <hr style="margin:12px 0; border:none; height:1px; background:#eef1f6" />
+
+         <h3>Registrar vacaciones</h3>
+         <label>Empleado</label>
+         <select id="employee"></select>
+
+         <label>Reemplazo (opcional)</label>
+         <select id="replacement"></select>
+
+         <label>Fecha inicio</label>
+         <input id="start" type="date">
+
+         <label>Fecha fin</label>
+         <input id="end" type="date">
+
+         <div id="validation" class="small"></div>
+
+         <button id="save-vac">Guardar vacaciones</button>
+         <div id="msg" class="small"></div>
+
+         <hr style="margin:12px 0; border:none; height:1px; background:#eef1f6" />
+         <h4>Vacaciones próximas</h4>
+         <div class="vac-list" id="vac-list"></div>
+        </div>
+
+        <div class="panel right">
+         <div class="calendar-header">
+             <div style="display:flex; align-items:center; gap:12px;">
+                <button id="prev" class="secondary">◀</button>
+                <button id="next" class="secondary">▶</button>
+                <h3 id="month-title" style="margin:0"></h3>
+             </div>
+             <div class="controls">
+                <div class="small" id="loading-holidays">Cargando festivos...</div>
+                <button id="today" class="secondary">Hoy</button>
+             </div>
+         </div>
+
+         <div class="calendar-grid" id="weekday-names" style="margin-bottom:6px;"></div>
+         <div class="calendar-grid" id="calendar"></div>
+         <div style="margin-top:12px;" class="small">Notas: los festivos de Colombia se consultan vía una API pública; los días festivos no cuentan dentro del máximo de 15 días.</div>
+        </div>
+    </main>
+
+    <footer>Guardado local en tu navegador. Para publicar: sube este archivo a un repo y activa GitHub Pages.</footer>
+
+<script>
+const sampleMembers = ["Carlos Ruiz"];
+let members = JSON.parse(localStorage.getItem('members') || 'null') || sampleMembers.slice();
+let vacations = JSON.parse(localStorage.getItem('vacations') || '[]');
+let holidaysCache = {};
+
+const $ = id => document.getElementById(id);
+const iso = d => d.toISOString().slice(0,10);
+
+function saveState(){
+    localStorage.setItem('members', JSON.stringify(members));
+    localStorage.setItem('vacations', JSON.stringify(vacations));
+}
+
+function setMembersList(){
+    const ep = $('employee');
+    const rp = $('replacement');
+    ep.innerHTML = '';
+    rp.innerHTML = '<option value="">-- Ninguno --</option>';
+    members.forEach(m=>{
+        const o = document.createElement('option'); o.value = m; o.textContent = m; ep.appendChild(o);
+        const o2 = document.createElement('option'); o2.value = m; o2.textContent = m; rp.appendChild(o2);
+    });
+}
+
+$('add-member').addEventListener('click', ()=>{
+    const name = $('new-member').value.trim();
+    if (!name) return;
+    if (!members.includes(name)) members.push(name);
+    $('new-member').value = '';
+    setMembersList();
+    saveState();
+    renderVacList();
+});
+
+$('reset-members').addEventListener('click', ()=>{
+    members = sampleMembers.slice();
+    vacations = [];
+    saveState();
+    setMembersList();
+    renderVacList();
+    renderCalendar();
+});
+
+$('save-vac').addEventListener('click', async ()=>{
+    const emp = $('employee').value;
+    const rep = $('replacement').value || null;
+    const s = $('start').value;
+    const e = $('end').value;
+    $('msg').textContent = '';
+    if (!emp || !s || !e) { $('msg').textContent = 'Complete empleado y fechas.'; return; }
+    const start = new Date(s);
+    const end = new Date(e);
+    if (end < start){ $('msg').textContent = 'La fecha fin debe ser posterior o igual a inicio.'; return; }
+    const years = new Set([start.getFullYear(), end.getFullYear()]);
+    for (let y of years) await fetchHolidays(y);
+    let totalDays = 0;
+    let cur = new Date(start);
+    const includedHolidays = [];
+    while (cur <= end){
+        const dIso = iso(cur);
+        const isHoliday = (holidaysCache[cur.getFullYear()]||[]).includes(dIso);
+        if (!isHoliday) totalDays++;
+        else includedHolidays.push(dIso);
+        cur.setDate(cur.getDate()+1);
+    }
+    if (totalDays > 15){ $('msg').textContent = `Rango supera 15 días de vacaciones (excluyendo ${includedHolidays.length} festivo(s)). Días contados: ${totalDays}`; return; }
+    vacations.push({id: Date.now(), employee: emp, replacement: rep, start: s, end: e, created: new Date().toISOString()});
+    saveState();
+    $('msg').textContent = 'Vacaciones registradas.';
+    renderVacList();
+    renderCalendar();
+});
+
+function renderVacList(){
+    const cont = $('vac-list');
+    cont.innerHTML = '';
+    const sorted = vacations.slice().sort((a,b)=> new Date(a.start) - new Date(b.start));
+    if (!sorted.length) { cont.innerHTML = '<div class="small">No hay vacaciones programadas.</div>'; return; }
+    sorted.forEach(v=>{
+        const d1 = v.start, d2 = v.end;
+        const div = document.createElement('div'); div.className='vac-item';
+        div.innerHTML = `<div>
+         <strong>${v.employee}</strong><div class="small">${d1} → ${d2}</div>
+         <div class="small">Reemplazo: ${v.replacement || '—'}</div>
+        </div>`;
+        const del = document.createElement('button'); del.textContent='Eliminar'; del.className='secondary';
+        del.addEventListener('click', ()=>{ vacations = vacations.filter(x=>x.id!==v.id); saveState(); renderVacList(); renderCalendar(); });
+        div.appendChild(del);
+        cont.appendChild(div);
+    });
+}
+
+async function fetchHolidays(year){
+    if (holidaysCache[year]) return holidaysCache[year];
+    try {
+        $('loading-holidays').textContent = `Cargando festivos ${year}...`;
+        const res = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/CO`);
+        if (!res.ok) throw new Error('No se pudo cargar festivos');
+        const data = await res.json();
+        const list = data.map(h=>h.date);
+        holidaysCache[year]=list;
+        $('loading-holidays').textContent = '';
+        return list;
+    } catch(err){
+        $('loading-holidays').textContent = 'Error cargando festivos (la validación seguirá sin festivos).';
+        holidaysCache[year]=[];
+        return [];
+    }
+}
+
+let viewDate = new Date(); viewDate.setDate(1);
+
+function renderWeekdayNames(){
+    const names = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+    const el = $('weekday-names');
+    el.innerHTML='';
+    names.forEach(n=>{
+        const d = document.createElement('div'); d.className='small'; d.style.textAlign='center'; d.textContent=n; el.appendChild(d);
+    });
+}
+
+function renderCalendar(){
+    renderWeekdayNames();
+    const cal = $('calendar'); cal.innerHTML='';
+    const month = viewDate.getMonth(), year = viewDate.getFullYear();
+    $('month-title').textContent = viewDate.toLocaleString(undefined,{month:'long', year:'numeric'});
+
+    fetchHolidays(year);
+    fetchHolidays(year-1);
+    fetchHolidays(year+1);
+
+    const firstDay = new Date(year, month, 1);
+    let startIndex = firstDay.getDay();
+    startIndex = (startIndex + 6) % 7;
+
+    const daysInMonth = new Date(year, month+1, 0).getDate();
+    for (let i=0;i<startIndex;i++){
+        const d = document.createElement('div'); d.className='day'; d.style.background='#f6f8fb'; cal.appendChild(d);
+    }
+    for (let day=1; day<=daysInMonth; day++){
+        const ddate = new Date(year, month, day);
+        const isoDay = iso(ddate);
+        const cell = document.createElement('div'); cell.className='day';
+        const num = document.createElement('div'); num.className='num'; num.textContent = day; cell.appendChild(num);
+        const hols = holidaysCache[year] || [];
+        if (hols.includes(isoDay)){
+         const h = document.createElement('div'); h.className='holiday'; h.textContent='Festivo'; cell.appendChild(h);
+        }
+        vacations.forEach(v=>{
+         if (new Date(v.start) <= ddate && ddate <= new Date(v.end)){
+             const t = document.createElement('div'); t.className='vac-tag'; t.textContent = v.employee + (v.replacement ? ` → ${v.replacement}` : '');
+             cell.appendChild(t);
+         }
+        });
+        const today = new Date();
+        if (isoDay === iso(today)) {
+         const b = document.createElement('div'); b.className='badge'; b.textContent='Hoy';
+         b.style.position='absolute'; b.style.top='6px'; b.style.right='6px';
+         cell.appendChild(b);
+        }
+        cal.appendChild(cell);
+    }
+}
+
+$('prev').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()-1); renderCalendar(); });
+$('next').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()+1); renderCalendar(); });
+$('today').addEventListener('click', ()=>{ viewDate = new Date(); viewDate.setDate(1); renderCalendar(); });
+
+setMembersList();
+renderVacList();
+renderCalendar();
+</script>
+
+<script>
+let members = [];
+let vacations = [];
+
+async function loadState(){
+  const res = await fetch('/.netlify/functions/vacations');
+  const data = await res.json();
+  members = data.members ?? [];
+  vacations = data.vacations ?? [];
+}
+
+async function saveMember(name){
+  await fetch('/.netlify/functions/vacations', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ type:'add-member', payload:{ name } })
+  });
+}
+
+async function saveVacation(v){
+  await fetch('/.netlify/functions/vacations', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ type:'save-vacation', payload: v })
+  });
+}
+
+async function deleteVacation(id){
+  await fetch('/.netlify/functions/vacations', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ type:'delete-vacation', payload:{ id } })
+  });
+}
+
+// Hook into existing UI logic
+window.addEventListener('DOMContentLoaded', async ()=>{
+  await loadState();
+  if(typeof setMembersList === 'function') setMembersList();
+  if(typeof renderVacList === 'function') renderVacList();
+  if(typeof renderCalendar === 'function') renderCalendar();
+});
+</script>
+
+</body>
+</html>
