@@ -163,7 +163,7 @@ $('save-vac').addEventListener('click', async ()=>{
         else includedHolidays.push(dIso);
         cur.setDate(cur.getDate()+1);
     }
-    if (totalDays > 15){ $('msg').textContent = `Rango supera 15 días de vacaciones (excluyendo ${includedHolidays.length} festivo(s)). Días contados: ${totalDays}`; return; }
+    if (totalDays > 30){ $('msg').textContent = `Rango supera 15 días de vacaciones (excluyendo ${includedHolidays.length} festivo(s)). Días contados: ${totalDays}`; return; }
     vacations.push({id: Date.now(), employee: emp, replacement: rep, start: s, end: e, created: new Date().toISOString()});
     saveState();
     $('msg').textContent = 'Vacaciones registradas.';
